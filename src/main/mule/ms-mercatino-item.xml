@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns:apikit="http://www.mulesoft.org/schema/mule/mule-apikit"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/mule-apikit http://www.mulesoft.org/schema/mule/mule-apikit/current/mule-apikit.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="2c520e94-87ad-4ac9-be4b-a19fbcedbed1" >
+		<http:listener-connection host="0.0.0.0" port="8084" />
+	</http:listener-config>
+	<apikit:config outboundHeadersMapName="outboundHeadersMapName" httpStatusVarName="httpStatus" doc:name="Router" doc:id="34fcd7b8-9a04-4c3e-bb68-e5f619fffa31" name="Router" api="resource::cdf1abc7-b4a4-4c3a-81d1-6185b7fff788:api-ms-mercatino-item:1.0.2:raml:zip:api-ms-mercatino-item.raml" />
+	<db:config name="Database_Config" doc:name="Database Config" doc:id="e10a2dc4-5156-4918-bc44-ad9d02493c35" >
+		<db:my-sql-connection host="localhost" port="3306" user="root" password="password" database="mercatinodb" />
+	</db:config>
+	<flow name="ms-mercatino-itemFlow" doc:id="f6a98f22-31a9-42a4-a595-80fa7576a4a7" >
+		<http:listener doc:name="Listener" doc:id="d2bca213-3e65-4983-bf30-eabe1a6ddde4" config-ref="HTTP_Listener_config" path="/*"/>
+		<apikit:router doc:name="APIkit Router" doc:id="a2ef11df-aeb2-47e2-b059-70d3ff38565c" config-ref="Router"/>
+	</flow>
+	<flow name="get:\Item\(item_id):application\json:Router" doc:id="c276ed87-0a29-46c5-882f-9b718f50a65f" >
+		<db:select doc:name="Select" doc:id="5ec01a8a-5b8b-4576-8b7a-83a2e90f58d4" config-ref="Database_Config">
+			<db:sql ><![CDATA[SELECT *
+FROM items
+WHERE ItemId=:item_id]]></db:sql>
+			<db:input-parameters ><![CDATA[#[item_id:attributes.uriParams.item_id]]]></db:input-parameters>
+		</db:select>
+		<choice doc:name="Choice" doc:id="bd6f5ae3-b3b2-4031-b7e9-8be04f27aaea">
+			<when expression="#[isEmpty(payload)]">
+				<ee:transform doc:name="Non trovato" doc:id="e968b608-6c41-4269-a1a5-ca9fdb359f6e">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+
+{
+	"meta": {
+		"message": "Failed",
+		"code": -1
+	},
+	"data": {
+		"message": "No Item Found"
+	}
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</when>
+			<otherwise >
+				<ee:transform doc:name="Prodotto" doc:id="29dd2542-36ca-4590-8585-e5b23347d7f8" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload map ((item, index) -> 
+{
+	"meta": {
+		"message": "Success",
+		"code": 0
+	},
+	"data": {
+		"message": "Item Found",
+		"Item": [{
+			"ItemId": item.ItemId,
+			"Name":item.Name,
+			"Price":(item.Price as String {format:".00"} replace "," with ".") as Number
+		}]
+	}
+} )]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</otherwise>
+		</choice>
+	</flow>
+	<flow name="get:\Item:application\json:Router" doc:id="0d570c1b-39c1-411e-9e25-888614750aba" >
+		<db:select doc:name="Select product by name" doc:id="49e7e304-aaac-48a5-8a84-c5bf85b527cb" config-ref="Database_Config">
+			<db:sql ><![CDATA[SELECT *
+FROM items
+WHERE Name=:Name]]></db:sql>
+			<db:input-parameters ><![CDATA[#[Name:attributes.uriParams.Name]]]></db:input-parameters>
+		</db:select>
+		<choice doc:name="Choice" doc:id="5409fc5d-58f8-47b7-9828-98d6dde7b5ae" >
+			<when expression="#[isEmpty(payload)]" >
+				<ee:transform doc:name="Non trovato" doc:id="0cb229b3-1fa1-4a69-9cda-db21868c1eac" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+
+{
+	"meta": {
+		"message": "Failed",
+		"code": -1
+	},
+	"data": {
+		"message": "No Item Found"
+	}
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</when>
+			<otherwise >
+				<ee:transform doc:name="Prodotto" doc:id="e2186f91-ea4d-4d5d-99fd-56a3f8ab6b2b" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload map ((item, index) -> 
+{
+	"meta": {
+		"message": "Success",
+		"code": 0
+	},
+	"data": {
+		"message": "Item Found",
+		"Item": [{
+			"ItemId": item.ItemId,
+			"Name":item.Name,
+			"Price":(item.Price as String {format:".00"} replace "," with ".") as Number
+		}]
+	}
+} )]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</otherwise>
+		</choice>
+	</flow>
+	<flow name="post:\Item:application\json:Router" doc:id="21f484ba-fd15-4887-bc3d-ececb348f0ac" >
+		<db:insert doc:name="Insert" doc:id="60125797-6e6d-410e-a47a-422cc16a41ba" config-ref="Database_Config">
+			<db:sql ><![CDATA[INSERT INTO items(Name, Price)
+VALUES (:Name, :Price)]]></db:sql>
+			<db:input-parameters ><![CDATA[#[%dw 2.0
+output application/java
+---
+{
+	"Name":attributes.uriParams.Name,
+	"Price":attributes.uriParams.Price
+}]]]></db:input-parameters>
+		</db:insert>
+	</flow>
+</mule>
