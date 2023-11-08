@@ -10,7 +10,7 @@ http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/
 	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="2c520e94-87ad-4ac9-be4b-a19fbcedbed1" >
 		<http:listener-connection host="0.0.0.0" port="8084" />
 		<http:listener-interceptors >
-			<http:cors-interceptor >
+			<http:cors-interceptor allowCredentials="true" >
 				<http:origins >
 					<http:public-resource />
 				</http:origins>
@@ -24,11 +24,7 @@ http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/
 	<flow name="ms-mercatino-itemFlow" doc:id="f6a98f22-31a9-42a4-a595-80fa7576a4a7" >
 		<http:listener doc:name="Listener" doc:id="d2bca213-3e65-4983-bf30-eabe1a6ddde4" config-ref="HTTP_Listener_config" path="/*">
 			<http:response >
-				<http:headers ><![CDATA[#[output application/java
----
-{
-	"Access-Control-Allow-Origin" : "*"
-}]]]></http:headers>
+				<http:headers ><![CDATA[#[vars.outboundHeaders default {}]]]></http:headers>
 			</http:response>
 		</http:listener>
 		<apikit:router doc:name="APIkit Router" doc:id="a2ef11df-aeb2-47e2-b059-70d3ff38565c" config-ref="Router"/>
@@ -129,7 +125,6 @@ output application/json
 						<ee:set-payload ><![CDATA[%dw 2.0
 output application/json
 ---
-payload map ((item, index) -> 
 {
 	"meta": {
 		"message": "Success",
@@ -137,13 +132,14 @@ payload map ((item, index) ->
 	},
 	"data": {
 		"message": "Item Found",
-		"Item": [{
+		"Item": 
+		payload map ((item, index) ->{
 			"ItemId": item.ItemId,
 			"Name":item.Name,
 			"Price":(item.Price as String {format:".00"} replace "," with ".") as Number
-		}]
+		})
 	}
-} )]]></ee:set-payload>
+}]]></ee:set-payload>
 					</ee:message>
 				</ee:transform>
 			</otherwise>
@@ -154,11 +150,11 @@ payload map ((item, index) ->
 			<db:sql ><![CDATA[INSERT INTO items(Name, Price)
 VALUES (:Name, :Price)]]></db:sql>
 			<db:input-parameters ><![CDATA[#[%dw 2.0
-output application/java
+output application/json
 ---
 {
-	"Name":attributes.uriParams.Name,
-	"Price":attributes.uriParams.Price
+	"Name":payload.Name,
+	"Price":payload.Price
 }]]]></db:input-parameters>
 		</db:insert>
 	</flow>
